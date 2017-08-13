@@ -1,0 +1,111 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Parameters" : {
+        "KeyName" : {
+            "Description" : "Name of an existing EC2 KeyPair to enable SSH access to the web server",
+            "Type" : "AWS::EC2::KeyPair::KeyName",
+            "ConstraintDescription"  : "Must be the name of an existing EC2 KeyPair"
+        },
+
+        "InstanceLocation" : {
+            "Description" : "WebServer EC2 instance type (Micro)",
+            "Type" : "String",
+            "Default" : "US-East-Virginia",
+            "AllowedValues" : ["US-East-Virginia", "US-West-Oregon" ],
+            "ConstraintDescription" : "Select location of the EC2 Instance."
+        },
+
+        "SSHLocation": {
+            "Description": "Lockdown SSH access to the bastion host (default can be accessed from anywhere)",
+            "Type": "String",
+            "MinLength": "9",
+            "MaxLength": "18",
+            "Default": "0.0.0.0/0",
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+            "ConstraintDescription": "must be a valid CIDR range of the form x.x.x.x/x."
+        },
+
+        "DeploymentGit": {
+            "Description": "GIT deployment source",    
+            "Type": "String"
+        }
+    },
+
+    "Mappings" : {
+        "InstanceLocationToMicroInstanceMap" : {
+            "US-East-Virginia"    : { "ImageId" : "ami-d15a75c7" },
+            "US-West-Oregon"         : { "ImageId" : "ami-835b4efa" }
+        }
+    },
+
+    "Resources" : {
+        "EC2Instance" : {
+            "Type" : "AWS::EC2::Instance", 
+            "Metadata" : {
+                "Comment1" : "Install Python tools",
+                "Comment2" : "Setup virtual env and stuff",
+                "AWS::CloudFormation::Init" : {
+                    "configSets" : {
+                        "Install" : ["Install"]
+                    },
+
+                    "Install" : {
+                        "packages" : {
+                            "apt-get" : {
+                                
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties" : {
+                "KeyName" : { "Ref" : "KeyName" },
+                "InstanceType" : "t2.micro",
+                "ImageId" : { "Fn::FindInMap" : [ "InstanceLocationToMicroInstanceMap", { "Ref" : "InstanceLocation" }, "ImageId"] },
+                "SecurityGroups" : [{ "Ref" : "EC2SecurityGroup" }],
+                "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+                    "#!/bin/bash -xe\n",
+                    "wget https://apt.puppetlabs.com/puppet5-release-xenial.deb\n",
+                    "mkdir ~/deployment\n",
+                    "cd ~/deployment\n",
+                    "git checkout ", { "Ref", "DeploymentGit" }, "\n",
+                    "cd ~\n",
+                    "sudo dpkg -i puppet5-release-xenial.deb\n",
+                    "sudo apt update\n",
+                    "sudo apt-get install puppet-agent\n",
+                    "sudo /opt/puppetlabs/bin/puppet module install puppet-nginx --version 0.7.0",
+                    "sudo pip2 install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz\n",
+                    "# Install the files and packages from the metadata\n",
+                    "cfn-init -v ",
+                    "         --stack ", { "Ref" : "AWS::StackName" },
+                    "         --resource WebServerInstance ",
+                    "         --configsets Install ",
+                    "         --region ", { "Ref" : "AWS::Region" }, "\n"
+                ]]}},
+                "BlockDeviceMappings" : [
+                {
+                    "DeviceName"  : "/dev/sdc",
+                    "VirtualName" : "ephemeral0"
+                }]
+            }
+        },
+
+        "EC2SecurityGroup" : {
+            "Type" : "AWS::EC2::SecurityGroup",
+            "Properties" : {
+                "GroupDescription" : "SSH access",
+                "SecurityGroupIngress" : [
+                    { "IpProtocol" : "tcp", "FromPort" : "22", "ToPort" : "22", "CidrIp" : { "Ref" : "SSHLocation" }},
+                    { "IpProtocol" : "tcp", "FromPort" : "80", "ToPort" : "80", "CidrIp" : { "Ref" : "SSHLocation" }},
+                    { "IpProtocol" : "tcp", "FromPort" : "8000", "ToPort" : "8080", "CidrIp" : { "Ref" : "SSHLocation" }}]
+            }
+        }
+    },
+
+    "Outputs" : {
+        "Instance" : {
+        "Value" : { "Fn::GetAtt" : [ "EC2Instance", "PublicDnsName" ] }, 
+        "Description" : "DNS Name of the newly created EC2 instance"
+        }
+    }
+}
