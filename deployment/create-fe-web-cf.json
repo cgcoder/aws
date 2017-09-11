@@ -27,7 +27,8 @@
 
         "DeploymentGit": {
             "Description": "GIT deployment source",    
-            "Type": "String"
+            "Type": "String",
+            "Default": "https://github.com/cgcoder/aws"
         }
     },
 
@@ -65,15 +66,18 @@
                 "SecurityGroups" : [{ "Ref" : "EC2SecurityGroup" }],
                 "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
                     "#!/bin/bash -xe\n",
-                    "wget https://apt.puppetlabs.com/puppet5-release-xenial.deb\n",
+                    "wget https://apt.puppetlabs.com/puppet5-release-xenial.deb -O ~/puppet5-release-xenial.deb\n",
                     "mkdir ~/deployment\n",
                     "cd ~/deployment\n",
-                    "git checkout ", { "Ref", "DeploymentGit" }, "\n",
+                    "git clone ", { "Ref": "DeploymentGit" }, "\n",
                     "cd ~\n",
                     "sudo dpkg -i puppet5-release-xenial.deb\n",
                     "sudo apt update\n",
-                    "sudo apt-get install puppet-agent\n",
-                    "sudo /opt/puppetlabs/bin/puppet module install puppet-nginx --version 0.7.0",
+                    "sudo apt-get install -y puppet-agent\n",
+                    "sudo apt-get install pip3\n",
+                    "sudo pip3 install virtualenv\n",
+                    "sudo pip3 install django\n",
+                    "sudo /opt/puppetlabs/bin/puppet module install puppet-nginx --version 0.7.0\n",
                     "sudo pip2 install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz\n",
                     "# Install the files and packages from the metadata\n",
                     "cfn-init -v ",
